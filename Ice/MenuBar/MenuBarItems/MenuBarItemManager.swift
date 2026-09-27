@@ -326,11 +326,11 @@ extension MenuBarItemManager {
         }
 
         let itemWindowIDs = Bridging.getWindowList(option: [.menuBarItems, .activeSpace])
-        if cachedItemWindowIDs == itemWindowIDs {
-            logSkippingCache(reason: "item windows have not changed")
-            return
-        } else {
-            cachedItemWindowIDs = itemWindowIDs
+        if #unavailable(macOS 26.0) {
+            if cachedItemWindowIDs == itemWindowIDs {
+                logSkippingCache(reason: "item windows have not changed")
+                return
+            }
         }
 
         var items = MenuBarItem.getMenuBarItems(onScreenOnly: false, activeSpaceOnly: true)
@@ -357,6 +357,8 @@ extension MenuBarItemManager {
                 alwaysHiddenControlItem: alwaysHiddenControlItem,
                 otherItems: items
             )
+            // 成功后才记录，避免初始化失败后永久跳过重试。
+            cachedItemWindowIDs = itemWindowIDs
         } catch {
             Logger.itemManager.error("Error enforcing control item order: \(error)")
             Logger.itemManager.debug("Clearing menu bar item cache")

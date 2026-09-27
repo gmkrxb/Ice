@@ -122,7 +122,9 @@ final class MenuBarItemImageCache: ObservableObject {
             guard
                 // Use the most up-to-date window frame.
                 let itemFrame = Bridging.getWindowFrame(for: windowID),
-                itemFrame.minY == displayBounds.minY
+                itemFrame.minY >= displayBounds.minY,
+                itemFrame.minY < displayBounds.minY + (screen.getMenuBarHeight() ?? NSStatusBar.system.thickness),
+                itemFrame.width > 0, itemFrame.height > 0
             else {
                 continue
             }

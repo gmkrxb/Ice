@@ -66,7 +66,12 @@ final class ControlItem {
         guard let window else {
             return nil
         }
-        return CGWindowID(window.windowNumber)
+        // macOS 26 的托管窗口编号可能超出 CGWindowID 范围。
+        if let windowID = CGWindowID(exactly: window.windowNumber), windowID != kCGNullWindowID {
+            return windowID
+        }
+        return MenuBarItem.getMenuBarItems(onScreenOnly: false, activeSpaceOnly: true)
+            .first { $0.info == MenuBarItemInfo(namespace: .ice, title: identifier.rawValue) }?.windowID
     }
 
     /// A Boolean value that indicates whether the control item serves as
