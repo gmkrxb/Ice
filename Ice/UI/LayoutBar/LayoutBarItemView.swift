@@ -92,10 +92,9 @@ final class LayoutBarItemView: NSView {
         if let appState {
             appState.imageCache.$images
                 .sink { [weak self] images in
-                    guard
-                        let self,
-                        let cgImage = images[item.info]
-                    else {
+                    guard let self else { return }
+                    guard let cgImage = images[item.windowID] else {
+                        image = nil
                         return
                     }
                     image = NSImage(cgImage: cgImage, size: CGSize(width: cgImage.width, height: cgImage.height))
