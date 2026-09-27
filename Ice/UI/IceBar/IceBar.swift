@@ -207,7 +207,17 @@ final class IceBarPanel: NSPanel {
         guard presentationID == requestID else { return false }
 
         if ScreenCapture.cachedCheckPermissions() {
-            await appState.imageCache.updateCache()
+            // 首次展开允许短暂补抓，不能将部分截图直接当成完整结果。
+            for attempt in 0..<3 {
+                guard presentationID == requestID else { return false }
+                await appState.imageCache.updateCacheWithoutChecks(sections: [section], on: screen)
+                if appState.imageCache.hasImages(for: section) { break }
+                if attempt < 2 {
+                    do { try await Task.sleep(for: .milliseconds(100)) } catch { return false }
+                    guard presentationID == requestID else { return false }
+                    await appState.itemManager.cacheItemsIfNeeded()
+                }
+            }
         }
         // 收起或切换区域后，丢弃尚未完成的旧请求。
         guard presentationID == requestID else { return false }

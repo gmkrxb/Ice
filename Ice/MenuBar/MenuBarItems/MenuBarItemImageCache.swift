@@ -57,7 +57,7 @@ final class MenuBarItemImageCache: ObservableObject {
                     appState.itemManager.$itemCache.removeDuplicates().mapToVoid()
                 )
             )
-            .throttle(for: 0.5, scheduler: DispatchQueue.main, latest: false)
+            .throttle(for: 0.5, scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] in
                 guard let self else {
                     return
@@ -97,6 +97,15 @@ final class MenuBarItemImageCache: ObservableObject {
         return true
     }
 
+    /// 检查全部待显示项目，而不是只检查是否抓到任意一张图片。
+    @MainActor
+    func hasImages(for section: MenuBarSection.Name) -> Bool {
+        guard let items = appState?.itemManager.itemCache.managedItems(for: section), !items.isEmpty else {
+            return false
+        }
+        return items.allSatisfy { images[$0.windowID] != nil }
+    }
+
     /// 抓取菜单栏图标，并以真实窗口编号索引。
     func createImages(for section: MenuBarSection.Name, screen: NSScreen) async -> [CGWindowID: CGImage] {
         guard let appState else {
@@ -133,7 +142,10 @@ final class MenuBarItemImageCache: ObservableObject {
 
         guard !windowIDs.isEmpty else { return [:] }
 
-        if
+        // Tahoe 的离屏托管窗口逐项抓取，避免合成图只包含部分项目。
+        let useComposite: Bool
+        if #available(macOS 26.0, *) { useComposite = false } else { useComposite = true }
+        if useComposite,
             let compositeImage = ScreenCapture.captureWindows(windowIDs, option: option),
             CGFloat(compositeImage.width) == frame.width * backingScaleFactor
         {
@@ -157,42 +169,27 @@ final class MenuBarItemImageCache: ObservableObject {
 
                 images[windowID] = itemImage
             }
-        } else {
-            Logger.imageCache.warning("Composite image capture failed. Attempting to capturing items individually.")
+        }
 
-            for windowID in windowIDs {
-                guard
-                    let itemFrame = itemFrames[windowID]
-                else {
-                    continue
-                }
-
-                let frame = CGRect(
-                    x: 0,
-                    y: ((itemFrame.height * backingScaleFactor) / 2) - (defaultItemThickness / 2),
-                    width: itemFrame.width * backingScaleFactor,
-                    height: defaultItemThickness
-                )
-
-                guard
-                    let itemImage = ScreenCapture.captureWindow(windowID, option: option),
-                    let croppedImage = itemImage.cropping(to: frame)
-                else {
-                    continue
-                }
-
-                images[windowID] = croppedImage
-            }
+        // 合成图裁剪失败的单个项目也需要补抓。
+        for windowID in windowIDs where images[windowID] == nil {
+            guard let itemImage = ScreenCapture.captureWindow(windowID, option: option) else { continue }
+            let height = min(CGFloat(itemImage.height), defaultItemThickness)
+            let crop = CGRect(
+                x: 0, y: (CGFloat(itemImage.height) - height) / 2,
+                width: CGFloat(itemImage.width), height: height
+            )
+            images[windowID] = itemImage.cropping(to: crop)
         }
 
         return images
     }
 
     /// Updates the cache for the given sections, without checking whether caching is necessary.
-    func updateCacheWithoutChecks(sections: [MenuBarSection.Name]) async {
+    func updateCacheWithoutChecks(sections: [MenuBarSection.Name], on targetScreen: NSScreen? = nil) async {
         guard
             let appState,
-            let screen = NSScreen.main
+            let screen = targetScreen ?? NSScreen.main
         else {
             return
         }
